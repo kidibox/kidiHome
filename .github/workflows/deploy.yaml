@@ -1,0 +1,55 @@
+---
+name: deploy
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: ZeroTier
+        uses: zerotier/github-action@v1
+        with:
+          network_id: ${{ secrets.ZEROTIER_NETWORK_ID }}
+          auth_token: ${{ secrets.ZEROTIER_CENTRAL_TOKEN }}
+
+      - name: Setup
+        run: |
+          mkdir -p ~/.ssh/
+          echo "$SSH_KEY" > ~/.ssh/deploy.key
+          chmod 600 ~/.ssh/deploy.key
+          cat >>~/.ssh/config <<END
+          Host k3s
+            HostName $SSH_HOST
+            User $SSH_USER
+            IdentityFile ~/.ssh/deploy.key
+            StrictHostKeyChecking no
+            UserKnownHostsFile=/dev/null
+          END
+        env:
+          SSH_KEY: ${{ secrets.GH_DEPLOY_KEY }}
+          SSH_HOST: ${{ secrets.K3S_MASTER_NODE }}
+          SSH_USER: ${{ secrets.K3S_USERNAME }}
+
+      - name: get kubeconfig
+        shell: bash
+        run: |
+          mkdir -p ~/.kube
+          ssh k3s sudo cat /etc/rancher/k3s/k3s.yaml > ~/.kube/config
+          chmod 600 ~/.kube/config
+          sed -i "s/127.0.0.1/$API_SERVER/g" ~/.kube/config
+        env:
+          API_SERVER: ${{ secrets.K3S_MASTER_NODE }}
+
+      - uses: actions/checkout@v3
+      - uses: cachix/install-nix-action@v19
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: nix flake check
+      - run: nix develop --command kubectl get all -A
