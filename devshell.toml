@@ -1,0 +1,9 @@
+# https://numtide.github.io/devshell
+[devshell]
+packages = [
+  "kubectl",
+]
+
+[[commands]]
+package = "devshell.cli"
+help = "Per project developer environments"
